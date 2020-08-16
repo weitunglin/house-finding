@@ -6,7 +6,7 @@ import (
 	"github.com/utahta/go-linenotify"
 )
 
-const token string = "LGPKiwIbPmVYEvUww5cZsZqUvR5hh5lzpX1MBCavVHw"
+const token string = "z9zuqWJNG2Gc3ECQDdlZaLAcVPxS1kZoZV3jGIYnnHX"
 
 var ln *linenotify.Client
 

@@ -3,33 +3,19 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/gocolly/colly"
 )
 
-var cases map[string]Case
+// ParseLayout is for parsing date time
+const ParseLayout string = "2006 1 2"
+
+var cases []Case
 
 func init() {
-	cases = make(map[string]Case)
-	cases["公開標售臺北市中正區水源路37之2號3樓之2等3戶市有不動產（均含車位），請踴躍參加投標。"] = Case{
-		Name:         "公開標售臺北市中正區水源路37之2號3樓之2等3戶市有不動產（均含車位），請踴躍參加投標。",
-		AnnounceDate: "109-07-29",
-		BidDate:      "109-08-21",
-		Progress:     "公告中",
-	}
-	cases["公開徵求臺北市士林區建業路7號等3處市有房地活化提案，請踴躍參加。"] = Case{
-		Name:         "公開徵求臺北市士林區建業路7號等3處市有房地活化提案，請踴躍參加。",
-		AnnounceDate: "109-07-22",
-		BidDate:      "109-08-25",
-		Progress:     "公告中",
-	}
-	cases["公開標租新北市板橋區江子翠段第二崁小段189-5地號市有不動產案"] = Case{
-		Name:         "公開標租新北市板橋區江子翠段第二崁小段189-5地號市有不動產案",
-		AnnounceDate: "109-08-10",
-		BidDate:      "109-09-01",
-		Progress:     "公告中",
-	}
+	cases = make([]Case, 0)
 }
 
 func main() {
@@ -59,15 +45,19 @@ func main() {
 			default:
 			}
 		})
+
 		fmt.Printf(", row: %+v\n", c)
-		_, exist := cases[c.Name]
-		if exist {
-			// update
-			cases[c.Name] = c
-		} else {
-			// add to list
+		exist := false
+		for _, v := range cases {
+			if v.Name == c.Name {
+				exist = true
+				break
+			}
+		}
+
+		if !exist {
+			cases = append(cases, c)
 			// announce to line notify
-			cases[c.Name] = c
 			if bytes, err := json.MarshalIndent(c, "", "  "); err != nil {
 				fmt.Println("error occurred during parsing json")
 			} else {
@@ -91,26 +81,57 @@ func main() {
 
 	go func() {
 		for {
-			<-time.After(1 * time.Minute)
+			<-time.After(5 * time.Minute)
 			crawler.Visit("https://dof.gov.taipei/News.aspx?n=624B36D56FB63705&sms=148C417C1585EF00")
 		}
 	}()
 
-	<-time.After(1 * time.Second)
-	tick := time.Tick(1 * time.Minute)
-	for range tick {
-		caseArray := make([]Case, 0)
-		for _, v := range cases {
-			caseArray = append(caseArray, v)
-		}
+	go func() {
+		jt := NewJobTicker()
+		for {
+			<-jt.t.C
 
-		if bytes, err := json.MarshalIndent(caseArray, "", "  "); err != nil {
-			fmt.Println("error occurred during parsing list json")
-		} else {
-			if err = notify(string(bytes)); err != nil {
-				fmt.Println("error occurred during sending line message (list)")
+			// get cases list
+			caseArray := make([]Case, 0)
+			for _, v := range cases {
+				y, e := strconv.Atoi(v.BidDate[0:3])
+				if e != nil {
+					fmt.Println("error occurred during parsing date time year")
+				}
 
+				m, e := strconv.Atoi(v.BidDate[4:6])
+				if e != nil {
+					fmt.Println("error occurred during parsing date time month")
+				}
+
+				d, e := strconv.Atoi(v.BidDate[7:9])
+				if e != nil {
+					fmt.Println("error occurred during parsing date time day")
+				}
+
+				ct, err := time.Parse(ParseLayout, strconv.Itoa(y+1911)+" "+strconv.Itoa(m)+" "+strconv.Itoa(d))
+				if err != nil {
+					fmt.Println("error occurred during paring datet time")
+				}
+
+				if time.Now().Before(ct) {
+					caseArray = append(caseArray, v)
+				}
 			}
+
+			if bytes, err := json.MarshalIndent(caseArray, "", "  "); err != nil {
+				fmt.Println("error occurred during parsing list json")
+			} else {
+				if err = notify(string(bytes)); err != nil {
+					fmt.Println("error occurred during sending line message (list)")
+
+				}
+			}
+
+			jt.updateJobTicker()
 		}
-	}
+	}()
+
+	ch := make(chan bool)
+	<-ch
 }
